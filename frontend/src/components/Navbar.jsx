@@ -214,7 +214,13 @@ const Navbar = () => {
                         notifications.slice(0, 8).map((n) => (
                           <div
                             key={n._id}
-                            onClick={() => markAsRead(n._id)}
+                            onClick={() => {
+                              markAsRead(n._id);
+                              if (n.relatedItem) {
+                                setNotifDropdownOpen(false);
+                                navigate(`/items/${n.relatedItem}`);
+                              }
+                            }}
                             style={{
                               padding: '0.75rem 1rem',
                               borderBottom: '1px solid var(--border-color)',

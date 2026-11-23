@@ -315,9 +315,9 @@ const getAdminClaims = async (req, res, next) => {
     const claims = await Claim.find(query)
       .populate({
         path: 'item',
-        populate: { path: 'reportedBy', select: 'name email' },
+        populate: { path: 'reportedBy', select: 'name email phone studentId' },
       })
-      .populate('claimant', 'name email phone avatar reputationScore')
+      .populate('claimant', 'name email phone avatar reputationScore studentId')
       .populate('reviewedBy', 'name email')
       .sort('-createdAt')
       .skip(skip)

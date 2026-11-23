@@ -17,6 +17,8 @@ import {
   Eye,
   AlertCircle,
   Award,
+  Phone,
+  Mail,
 } from 'lucide-react';
 import { itemAPI, matchAPI, claimAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -419,9 +421,96 @@ const ItemDetailsPage = () => {
                   This item has been successfully claimed and returned to its owner!
                 </div>
               ) : isOwner ? (
-                <div style={{ textAlign: 'center', padding: '0.85rem', backgroundColor: '#f0f9ff', borderRadius: 'var(--radius-md)', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem' }}>
-                  You reported this item. Check below for any claims or matches filed by community members.
-                </div>
+                (() => {
+                  const verifiedClaim =
+                    item.approvedClaim ||
+                    itemClaims.find((c) => c.status === 'approved' || c.status === 'reunited');
+
+                  if (verifiedClaim) {
+                    const ownerPhone = verifiedClaim.contactPhone || verifiedClaim.claimant?.phone;
+                    const ownerEmail = verifiedClaim.contactEmail || verifiedClaim.claimant?.email;
+                    return (
+                      <div
+                        style={{
+                          backgroundColor: '#f0fdf4',
+                          border: '2px solid #16a34a',
+                          borderRadius: 'var(--radius-lg)',
+                          padding: '1.25rem',
+                          boxShadow: '0 4px 14px rgba(22, 163, 74, 0.15)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: '#15803d', fontWeight: 800, fontSize: '1rem' }}>
+                          <CheckCircle size={22} style={{ color: '#16a34a' }} />
+                          <span>VERIFIED REAL OWNER (ADMIN APPROVED)</span>
+                        </div>
+
+                        <p style={{ fontSize: '0.875rem', color: '#166534', marginBottom: '1rem', lineHeight: 1.5 }}>
+                          Admin has verified that <strong>{verifiedClaim.claimant?.name || 'Claimant'}</strong> is the genuine owner of this found item. <strong>Please submit / handover the item to them.</strong>
+                        </p>
+
+                        <div style={{ backgroundColor: '#ffffff', borderRadius: 'var(--radius-md)', padding: '0.85rem 1rem', border: '1px solid #bbf7d0', marginBottom: '1rem' }}>
+                          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#15803d', fontWeight: 700, marginBottom: '0.5rem' }}>
+                            👉 Submit / Handover To This Owner:
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.9rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <User size={16} style={{ color: 'var(--teal-600)' }} />
+                              <span><strong>Owner Name:</strong> {verifiedClaim.claimant?.name}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <Phone size={16} style={{ color: '#16a34a' }} />
+                              <span>
+                                <strong>Owner Phone:</strong>{' '}
+                                <a href={`tel:${ownerPhone}`} style={{ color: '#15803d', fontWeight: 700, textDecoration: 'underline' }}>
+                                  {ownerPhone || 'Not provided'}
+                                </a>
+                              </span>
+                            </div>
+                            {ownerEmail && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Mail size={16} style={{ color: 'var(--teal-600)' }} />
+                                <span><strong>Email:</strong> {ownerEmail}</span>
+                              </div>
+                            )}
+                            {verifiedClaim.proofDescription && (
+                              <div style={{ marginTop: '0.25rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                <strong>Verified Proof:</strong> {verifiedClaim.proofDescription}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {ownerPhone && (
+                            <a
+                              href={`tel:${ownerPhone}`}
+                              className="btn btn-sm btn-primary"
+                              style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                            >
+                              <Phone size={14} /> Call Owner to Submit Item
+                            </a>
+                          )}
+                          {item.status !== 'reunited' && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-navy"
+                              style={{ backgroundColor: '#059669' }}
+                              onClick={() => handleReunite(verifiedClaim._id)}
+                            >
+                              <CheckCircle size={15} /> Finalize Handover & Award Points
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ textAlign: 'center', padding: '0.85rem', backgroundColor: '#f0f9ff', borderRadius: 'var(--radius-md)', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem' }}>
+                      You reported this item. When an admin reviews and approves an ownership claim, the verified owner's contact info will be displayed here for handover.
+                    </div>
+                  );
+                })()
               ) : userClaim ? (
                 <div
                   style={{
@@ -473,15 +562,20 @@ const ItemDetailsPage = () => {
                   <div
                     key={claim._id}
                     style={{
-                      border: '1px solid var(--border-color)',
+                      border: claim.status === 'approved' ? '2px solid #22c55e' : '1px solid var(--border-color)',
                       borderRadius: 'var(--radius-md)',
                       padding: '1rem',
-                      backgroundColor: 'var(--border-light)',
+                      backgroundColor: claim.status === 'approved' ? '#f0fdf4' : 'var(--border-light)',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                       <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
                         {claim.claimant?.name}
+                        {claim.status === 'approved' && (
+                          <span style={{ marginLeft: '0.5rem', color: '#16a34a', fontSize: '0.8rem', fontWeight: 700 }}>
+                            (Verified Real Owner)
+                          </span>
+                        )}
                       </div>
                       <span
                         className={`badge ${
@@ -494,7 +588,7 @@ const ItemDetailsPage = () => {
                             : 'badge-pending'
                         }`}
                       >
-                        {claim.status}
+                        {claim.status === 'approved' ? 'VERIFIED OWNER' : claim.status}
                       </span>
                     </div>
 
@@ -502,9 +596,9 @@ const ItemDetailsPage = () => {
                       <strong>Proof Description:</strong> {claim.proofDescription}
                     </div>
 
-                    {claim.contactPhone && (
-                      <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
-                        Contact: {claim.contactPhone} &bull; {claim.contactEmail}
+                    {(claim.contactPhone || claim.claimant?.phone) && (
+                      <div style={{ fontSize: '0.825rem', color: claim.status === 'approved' ? '#166534' : 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: claim.status === 'approved' ? 600 : 400 }}>
+                        Submit to Contact: 📞 <a href={`tel:${claim.contactPhone || claim.claimant?.phone}`} style={{ textDecoration: 'underline' }}>{claim.contactPhone || claim.claimant?.phone}</a> {claim.contactEmail && `• ✉️ ${claim.contactEmail}`}
                       </div>
                     )}
 

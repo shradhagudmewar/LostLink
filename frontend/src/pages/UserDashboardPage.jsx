@@ -13,6 +13,7 @@ import {
   Edit,
   ExternalLink,
   Lock,
+  Phone,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -393,6 +394,43 @@ const UserDashboardPage = () => {
                       <Edit size={14} /> Edit
                     </Link>
                   </div>
+
+                  {item.status === 'claimed' && (
+                    <div
+                      style={{
+                        width: '100%',
+                        marginTop: '0.5rem',
+                        padding: '0.75rem 1rem',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #86efac',
+                        borderRadius: 'var(--radius-md)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <CheckCircle size={18} style={{ color: '#16a34a' }} />
+                        <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>
+                          Admin Verified Real Owner:{' '}
+                          <strong>{item.approvedClaim?.claimant?.name || 'Claimant'}</strong>
+                          {(item.approvedClaim?.contactPhone || item.approvedClaim?.claimant?.phone) && (
+                            <> &bull; 📞 <strong>{item.approvedClaim?.contactPhone || item.approvedClaim?.claimant?.phone}</strong></>
+                          )}
+                          {' '}&mdash; Submit / Handover to owner!
+                        </span>
+                      </div>
+                      <Link
+                        to={`/items/${item._id}`}
+                        className="btn btn-sm"
+                        style={{ backgroundColor: '#16a34a', color: '#ffffff', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Handover Details &rarr;
+                      </Link>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -558,6 +596,17 @@ const UserDashboardPage = () => {
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
                         {n.message}
                       </div>
+                      {n.relatedItem && (
+                        <div style={{ marginTop: '0.5rem' }}>
+                          <Link
+                            to={`/items/${n.relatedItem}`}
+                            className="btn btn-sm"
+                            style={{ backgroundColor: '#0d9488', color: '#fff', fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                          >
+                            View Item & Handover Details &rarr;
+                          </Link>
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                         {new Date(n.createdAt).toLocaleString()}
                       </div>

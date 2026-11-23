@@ -15,7 +15,7 @@ import {
   Lock,
   Unlock,
 } from 'lucide-react';
-import { adminAPI } from '../services/api';
+import { adminAPI, claimAPI } from '../services/api';
 import StatCard from '../components/StatCard';
 
 const AdminDashboardPage = () => {
@@ -39,6 +39,8 @@ const AdminDashboardPage = () => {
 
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
+  const [processingClaimId, setProcessingClaimId] = useState(null);
+  const [selectedClaim, setSelectedClaim] = useState(null);
 
   const loadAdminOverview = async () => {
     setLoading(true);
@@ -82,7 +84,74 @@ const AdminDashboardPage = () => {
       const res = await adminAPI.getClaims({ status: claimStatus, limit: 50 });
       setClaims(res.data.claims || []);
     } catch (err) {
-      console.error(err);
+      console.error('Error loading claims:', err);
+      setActionMsg(
+        err.response?.data?.message || err.message || 'Unable to load claims.'
+      );
+    }
+  };
+
+  // Approve a pending claim using the claimAPI service.
+  const handleApproveClaim = async (claimId) => {
+    if (!claimId || processingClaimId) return;
+
+    try {
+      setProcessingClaimId(claimId);
+      setActionMsg('');
+
+      const targetClaim = claims.find((c) => c._id === claimId);
+      const finderName = targetClaim?.item?.reportedBy?.name || 'Found student';
+      const claimantName = targetClaim?.claimant?.name || 'Owner';
+      const phone = targetClaim?.contactPhone || targetClaim?.claimant?.phone || '';
+
+      await claimAPI.reviewClaimStatus(claimId, {
+        status: 'approved',
+        adminNotes: `Verified by Admin as the genuine owner. Handover instructed to ${finderName}.`,
+      });
+
+      setActionMsg(
+        `✓ Claim approved! Verified that ${claimantName} is the real owner. Notification with phone number (${phone || 'provided'}) sent to ${finderName} to submit/handover the item.`
+      );
+      await loadClaims();
+      await loadAdminOverview();
+    } catch (err) {
+      console.error('Claim approval failed:', err);
+      setActionMsg(
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to approve claim. Please try again.'
+      );
+    } finally {
+      setProcessingClaimId(null);
+    }
+  };
+
+  const handleRejectClaim = async (claimId) => {
+    if (!claimId || processingClaimId) return;
+    const reason = window.prompt('Enter reason for claim rejection (optional):', 'Proof insufficient or does not match');
+    if (reason === null) return;
+
+    try {
+      setProcessingClaimId(claimId);
+      setActionMsg('');
+
+      await claimAPI.reviewClaimStatus(claimId, {
+        status: 'rejected',
+        adminNotes: reason,
+      });
+
+      setActionMsg('Claim has been rejected.');
+      await loadClaims();
+      await loadAdminOverview();
+    } catch (err) {
+      console.error('Claim rejection failed:', err);
+      setActionMsg(
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to reject claim. Please try again.'
+      );
+    } finally {
+      setProcessingClaimId(null);
     }
   };
 
@@ -490,33 +559,90 @@ const AdminDashboardPage = () => {
               <tbody>
                 {claims.map((c) => (
                   <tr key={c._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.75rem', fontWeight: 600 }}>{c.item?.title || 'Unknown'}</td>
-                    <td style={{ padding: '0.75rem' }}>{c.claimant?.name}</td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--navy-900)' }}>
+                        {c.item?.title || 'Unknown Item'}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Found by: <strong style={{ color: 'var(--teal-700)' }}>{c.item?.reportedBy?.name || 'Student'}</strong>
+                        {c.item?.reportedBy?.phone && ` (${c.item.reportedBy.phone})`}
+                      </div>
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <div style={{ fontWeight: 600 }}>{c.claimant?.name || 'Unknown'}</div>
+                      {c.claimant?.studentId && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          ID: {c.claimant.studentId}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '0.75rem', maxWidth: '280px' }}>
                       <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {c.proofDescription}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClaim(c)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--teal-600)',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontWeight: 600,
+                          marginTop: '2px',
+                        }}
+                      >
+                        View Full Proof {c.proofImages?.length ? `(${c.proofImages.length} images)` : ''}
+                      </button>
                     </td>
-                    <td style={{ padding: '0.75rem' }}>{c.contactPhone || c.contactEmail}</td>
                     <td style={{ padding: '0.75rem' }}>
-                      <span className={`badge ${c.status === 'approved' ? 'badge-approved' : c.status === 'rejected' ? 'badge-rejected' : 'badge-pending'}`}>
+                      <div style={{ fontWeight: 600, color: '#16a34a' }}>
+                        {c.contactPhone || c.claimant?.phone || 'No phone'}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {c.contactEmail || c.claimant?.email}
+                      </div>
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <span className={`badge ${c.status === 'approved' ? 'badge-approved' : c.status === 'rejected' ? 'badge-rejected' : c.status === 'reunited' ? 'badge-reunited' : 'badge-pending'}`}>
                         {c.status}
                       </span>
                     </td>
                     <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                      {c.status === 'pending' && (
-                        <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                      {c.status === 'pending' ? (
+                        <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                           <button
                             type="button"
                             className="btn btn-sm btn-primary"
-                            onClick={async () => {
-                              await adminAPI.reviewClaimStatus?.(c._id, { status: 'approved' });
-                              loadClaims();
-                            }}
+                            style={{ backgroundColor: '#0d9488' }}
+                            disabled={processingClaimId === c._id || processingClaimId !== null}
+                            onClick={() => handleApproveClaim(c._id)}
                           >
-                            Approve
+                            {processingClaimId === c._id ? 'Approving...' : 'Approve'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            disabled={processingClaimId === c._id || processingClaimId !== null}
+                            onClick={() => handleRejectClaim(c._id)}
+                          >
+                            Reject
                           </button>
                         </div>
+                      ) : c.status === 'approved' ? (
+                        <span style={{ color: '#059669', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <CheckCircle size={14} /> Approved (Owner Notified)
+                        </span>
+                      ) : c.status === 'reunited' ? (
+                        <span style={{ color: '#0284c7', fontSize: '0.8rem', fontWeight: 600 }}>
+                          ✓ Reunited
+                        </span>
+                      ) : (
+                        <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 600 }}>
+                          Rejected
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -524,6 +650,139 @@ const AdminDashboardPage = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Proof Details Modal for Admin */}
+          {selectedClaim && (
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                padding: '1rem',
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderRadius: 'var(--radius-lg)',
+                  maxWidth: '560px',
+                  width: '100%',
+                  maxHeight: '90vh',
+                  overflowY: 'auto',
+                  padding: '1.5rem',
+                  boxShadow: 'var(--shadow-xl)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.2rem', color: 'var(--navy-900)' }}>
+                    Claim Proof Review: {selectedClaim.item?.title}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedClaim(null)}
+                    style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)' }}
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.9rem' }}>
+                  <div style={{ backgroundColor: 'var(--border-light)', padding: '0.75rem', borderRadius: 'var(--radius-md)' }}>
+                    <div><strong>Claimant:</strong> {selectedClaim.claimant?.name}</div>
+                    <div><strong>Phone:</strong> {selectedClaim.contactPhone || selectedClaim.claimant?.phone || 'None'}</div>
+                    <div><strong>Email:</strong> {selectedClaim.contactEmail || selectedClaim.claimant?.email}</div>
+                    <div style={{ marginTop: '0.25rem', color: 'var(--teal-700)' }}>
+                      <strong>Found by:</strong> {selectedClaim.item?.reportedBy?.name || 'Student'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <strong>Proof Description:</strong>
+                    <div style={{ marginTop: '0.25rem', padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
+                      {selectedClaim.proofDescription}
+                    </div>
+                  </div>
+
+                  {selectedClaim.proofImages && selectedClaim.proofImages.length > 0 && (
+                    <div>
+                      <strong>Submitted Proof Images ({selectedClaim.proofImages.length}):</strong>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                        {selectedClaim.proofImages.map((img, idx) => (
+                          <a key={idx} href={img.url} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={img.url}
+                              alt={`Proof ${idx + 1}`}
+                              style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedClaim.securityAnswers && selectedClaim.securityAnswers.length > 0 && (
+                    <div>
+                      <strong>Security Questions & Answers:</strong>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        {selectedClaim.securityAnswers.map((sa, idx) => (
+                          <div key={idx} style={{ padding: '0.5rem', backgroundColor: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Q: {sa.question}</div>
+                            <div style={{ fontWeight: 600 }}>A: {sa.answer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => setSelectedClaim(null)}
+                  >
+                    Close
+                  </button>
+                  {selectedClaim.status === 'pending' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={processingClaimId === selectedClaim._id}
+                        onClick={() => {
+                          const id = selectedClaim._id;
+                          setSelectedClaim(null);
+                          handleRejectClaim(id);
+                        }}
+                      >
+                        Reject Claim
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        style={{ backgroundColor: '#0d9488' }}
+                        disabled={processingClaimId === selectedClaim._id}
+                        onClick={() => {
+                          const id = selectedClaim._id;
+                          setSelectedClaim(null);
+                          handleApproveClaim(id);
+                        }}
+                      >
+                        Approve Claim
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

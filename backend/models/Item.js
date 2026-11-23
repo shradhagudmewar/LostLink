@@ -98,6 +98,14 @@ const itemSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    approvedClaim: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Claim',
+    },
+    claimedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     moderationNotes: {
       type: String,
       default: '',

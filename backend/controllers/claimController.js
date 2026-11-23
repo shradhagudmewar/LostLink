@@ -160,7 +160,7 @@ const getItemClaims = async (req, res, next) => {
     }
 
     const claims = await Claim.find({ item: itemId })
-      .populate('claimant', 'name email phone avatar reputationScore')
+      .populate('claimant', 'name email phone studentId avatar reputationScore')
       .sort('-createdAt');
 
     res.status(200).json({
@@ -239,26 +239,85 @@ const reviewClaimStatus = async (req, res, next) => {
     }
 
     claim.status = status;
-    claim.adminNotes = adminNotes || claim.adminNotes;
+    claim.adminNotes = adminNotes || (isAdmin ? 'Verified by Admin as genuine owner' : claim.adminNotes);
     claim.reviewedBy = req.user._id;
     claim.reviewedAt = new Date();
     await claim.save();
 
-    if (status === 'approved' && claim.item) {
-      await Item.findByIdAndUpdate(claim.item._id, { status: 'claimed' });
-    }
+    const claimantName = claim.claimant?.name || 'Claimant';
+    const claimantPhone = claim.contactPhone || claim.claimant?.phone || 'Contact not provided';
+    const claimantEmail = claim.contactEmail || claim.claimant?.email || '';
 
-    await Notification.create({
-      recipient: claim.claimant._id,
-      type: 'claim_status_update',
-      title: `Claim ${status === 'approved' ? 'Approved ' : 'Rejected '}: ${claim.item.title}`,
-      message: `Your ownership claim for "${claim.item.title}" has been ${status}. ${
-        adminNotes ? `Note: "${adminNotes}"` : ''
-      }`,
-      relatedItem: claim.item._id,
-      relatedClaim: claim._id,
-      metadata: { status, adminNotes },
-    });
+    // Fetch finder details
+    const finderUser = claim.item?.reportedBy ? await User.findById(claim.item.reportedBy) : null;
+
+    if (status === 'approved' && claim.item) {
+      await Item.findByIdAndUpdate(claim.item._id, {
+        status: 'claimed',
+        approvedClaim: claim._id,
+        claimedBy: claim.claimant._id,
+      });
+
+      // 1. Send High-Priority Notification to the Student who Found & Reported the Item
+      if (claim.item.reportedBy && claim.item.reportedBy.toString() !== claim.claimant._id.toString()) {
+        await Notification.create({
+          recipient: claim.item.reportedBy,
+          type: 'claim_status_update',
+          title: `✅ Real Owner Verified: ${claim.item.title}`,
+          message: `Admin has verified that ${claimantName} is the real/genuine owner of "${claim.item.title}". Please submit / handover the item to them. Owner Phone: 📞 ${claimantPhone}${claimantEmail ? ` | ✉️ ${claimantEmail}` : ''}.`,
+          relatedItem: claim.item._id,
+          relatedClaim: claim._id,
+          metadata: {
+            status: 'approved',
+            isOwnerVerified: true,
+            claimantName,
+            claimantPhone,
+            claimantEmail,
+            actionRequired: 'handover_to_owner',
+            adminNotes: claim.adminNotes,
+          },
+        });
+      }
+
+      // 2. Notify Claimant that Claim is Approved and Finder will Hand Over the Item
+      await Notification.create({
+        recipient: claim.claimant._id,
+        type: 'claim_status_update',
+        title: `🎉 Claim Approved: ${claim.item.title}`,
+        message: `Your ownership claim for "${claim.item.title}" has been approved! The finder (${finderUser ? finderUser.name : 'student'}) has been instructed to handover the item to you.${
+          finderUser?.phone ? ` Finder Phone: 📞 ${finderUser.phone}` : ''
+        }`,
+        relatedItem: claim.item._id,
+        relatedClaim: claim._id,
+        metadata: {
+          status: 'approved',
+          adminNotes: claim.adminNotes,
+          finderName: finderUser?.name,
+          finderPhone: finderUser?.phone,
+        },
+      });
+    } else if (status === 'rejected' && claim.item) {
+      // Revert item status if it was previously claimed
+      const currentItem = await Item.findById(claim.item._id);
+      if (currentItem && currentItem.approvedClaim && currentItem.approvedClaim.toString() === claim._id.toString()) {
+        currentItem.status = 'active';
+        currentItem.approvedClaim = undefined;
+        currentItem.claimedBy = undefined;
+        await currentItem.save();
+      }
+
+      await Notification.create({
+        recipient: claim.claimant._id,
+        type: 'claim_status_update',
+        title: `Claim Rejected: ${claim.item.title}`,
+        message: `Your ownership claim for "${claim.item.title}" was not approved.${
+          adminNotes ? ` Reason: "${adminNotes}"` : ''
+        }`,
+        relatedItem: claim.item._id,
+        relatedClaim: claim._id,
+        metadata: { status: 'rejected', adminNotes },
+      });
+    }
 
     await logActivity(
       'CLAIM_REVIEWED',

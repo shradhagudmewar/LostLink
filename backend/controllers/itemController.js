@@ -82,10 +82,12 @@ const getItems = async (req, res, next) => {
 
 const getItemById = async (req, res, next) => {
   try {
-    const item = await Item.findById(req.params.id).populate(
-      'reportedBy',
-      'name email avatar reputationScore'
-    );
+    let item = await Item.findById(req.params.id)
+      .populate('reportedBy', 'name email avatar phone studentId reputationScore')
+      .populate({
+        path: 'approvedClaim',
+        populate: { path: 'claimant', select: 'name email phone studentId avatar reputationScore' },
+      });
 
     if (!item) {
       return res.status(404).json({
@@ -94,8 +96,24 @@ const getItemById = async (req, res, next) => {
       });
     }
 
+    // Dynamic fallback if item is marked claimed or reunited
+    if (!item.approvedClaim && (item.status === 'claimed' || item.status === 'reunited')) {
+      const activeClaim = await Claim.findOne({
+        item: item._id,
+        status: { $in: ['approved', 'reunited'] },
+      }).populate('claimant', 'name email phone studentId avatar reputationScore');
+      if (activeClaim) {
+        item = item.toObject();
+        item.approvedClaim = activeClaim;
+      }
+    }
+
     item.views = (item.views || 0) + 1;
-    await item.save();
+    if (typeof item.save === 'function') {
+      await item.save();
+    } else {
+      await Item.findByIdAndUpdate(item._id, { $inc: { views: 1 } });
+    }
 
     let userClaim = null;
     if (req.user) {
@@ -366,7 +384,28 @@ const deleteItem = async (req, res, next) => {
 
 const getMyReports = async (req, res, next) => {
   try {
-    const items = await Item.find({ reportedBy: req.user._id }).sort('-createdAt');
+    let items = await Item.find({ reportedBy: req.user._id })
+      .populate({
+        path: 'approvedClaim',
+        populate: { path: 'claimant', select: 'name email phone studentId avatar' },
+      })
+      .sort('-createdAt');
+
+    // Attach approved claim for any claimed item if not linked directly
+    items = await Promise.all(
+      items.map(async (doc) => {
+        const it = doc.toObject();
+        if (!it.approvedClaim && (it.status === 'claimed' || it.status === 'reunited')) {
+          const cl = await Claim.findOne({
+            item: it._id,
+            status: { $in: ['approved', 'reunited'] },
+          }).populate('claimant', 'name email phone studentId avatar');
+          if (cl) it.approvedClaim = cl;
+        }
+        return it;
+      })
+    );
+
     res.status(200).json({
       success: true,
       count: items.length,
