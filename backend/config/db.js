@@ -4,7 +4,7 @@ let memServer = null;
 
 const connectDB = async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/lostlink';
-  
+  console.log('MongoDB URI Host:', uri.split('@')[1]?.split('/')[0]);
   try {
     const conn = await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 3000,
